@@ -64,6 +64,7 @@ public class SecurityConfig {
         configuration.setAllowedOriginPatterns(List.of(
             "http://localhost:*",
             "http://127.0.0.1:*",
+            "https://starlit-semolina-0505d7.netlify.app",
             "https://agrinexus-ai.netlify.app"
         ));
 
