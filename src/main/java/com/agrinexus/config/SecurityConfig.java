@@ -62,6 +62,7 @@ public class SecurityConfig {
         CorsConfiguration configuration = new CorsConfiguration();
 
         configuration.setAllowedOrigins(List.of(
+            "https://agrinexus-ai-frontend.vercel.app",
             "https://starlit-semolina-0505d7.netlify.app",
             "https://agrinexus-ai.netlify.app",
             "http://localhost:3000",
