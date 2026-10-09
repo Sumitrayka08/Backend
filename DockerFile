@@ -1,0 +1,34 @@
+
+# Stage 1: Build the Spring Boot application
+FROM maven:3.9-eclipse-temurin-25 AS build
+
+WORKDIR /app
+
+# Copy Maven configuration and source code
+COPY pom.xml .
+COPY src ./src
+
+# Build the executable Spring Boot JAR
+RUN mvn -B clean package -DskipTests
+
+
+# Stage 2: Run the application
+FROM eclipse-temurin:25-jre
+
+WORKDIR /app
+
+# Create a non-root user
+RUN groupadd -g 10001 appgroup && \
+    useradd -u 10001 -g appgroup -s /usr/sbin/nologin appuser
+
+# Copy the packaged JAR from the build stage
+COPY --from=build /app/target/*.jar /app/app.jar
+
+# Run as a non-root user
+USER appuser
+
+# Render provides the PORT environment variable
+EXPOSE 8080
+
+# Start Spring Boot
+ENTRYPOINT ["java", "-XX:MaxRAMPercentage=75.0", "-jar", "/app/app.jar"]
