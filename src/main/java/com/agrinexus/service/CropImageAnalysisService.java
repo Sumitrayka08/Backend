@@ -6,11 +6,14 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -24,9 +27,13 @@ import com.agrinexus.repository.CropImageAnalysisRepository;
 @Service
 public class CropImageAnalysisService {
 
+    private static final Logger log = LoggerFactory.getLogger(CropImageAnalysisService.class);
+
     private final CropImageAnalysisRepository cropImageAnalysisRepository;
 
     private final RestClient restClient;
+
+    private final String aiServiceUrl;
 
     public CropImageAnalysisService(
             CropImageAnalysisRepository cropImageAnalysisRepository,
@@ -35,9 +42,15 @@ public class CropImageAnalysisService {
 
         this.cropImageAnalysisRepository =
                 cropImageAnalysisRepository;
+        this.aiServiceUrl = aiServiceUrl;
+
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(45000);
+        requestFactory.setReadTimeout(90000);
 
         this.restClient = restClientBuilder
                 .baseUrl(aiServiceUrl)
+                .requestFactory(requestFactory)
                 .build();
     }
 
@@ -51,12 +64,16 @@ public class CropImageAnalysisService {
             byte[] imageBytes =
                     Files.readAllBytes(imagePath);
 
+            final String safeFileName = (imageName != null && !imageName.trim().isEmpty())
+                    ? imageName
+                    : "crop_leaf.jpg";
+
             ByteArrayResource imageResource =
                     new ByteArrayResource(imageBytes) {
 
                         @Override
                         public String getFilename() {
-                            return imageName;
+                            return safeFileName.contains(".") ? safeFileName : safeFileName + ".jpg";
                         }
                     };
 
@@ -76,8 +93,14 @@ public class CropImageAnalysisService {
 
             body.add("file", fileEntity);
 
-            AiPredictionResponse prediction =
-                    restClient
+            AiPredictionResponse prediction = null;
+            Exception lastException = null;
+            int maxAttempts = 3;
+
+            for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+                try {
+                    log.info("Sending prediction request to AI microservice (attempt {}/{}): {}", attempt, maxAttempts, aiServiceUrl);
+                    prediction = restClient
                             .post()
                             .uri("/predict")
                             .contentType(
@@ -86,9 +109,31 @@ public class CropImageAnalysisService {
                             .retrieve()
                             .body(AiPredictionResponse.class);
 
+                    if (prediction != null) {
+                        log.info("AI microservice prediction succeeded on attempt {}: disease={}, confidence={}",
+                                attempt, prediction.getDisease(), prediction.getConfidence());
+                        break;
+                    }
+                } catch (Exception e) {
+                    lastException = e;
+                    log.warn("AI microservice attempt {}/{} failed: {}", attempt, maxAttempts, e.getMessage());
+                    if (attempt < maxAttempts) {
+                        try {
+                            Thread.sleep(3000);
+                        } catch (InterruptedException ie) {
+                            Thread.currentThread().interrupt();
+                            break;
+                        }
+                    }
+                }
+            }
+
             if (prediction == null) {
+                String errorMsg = lastException != null ? lastException.getMessage() : "empty response from AI microservice";
+                log.error("Failed to get prediction from AI service after {} attempts: {}", maxAttempts, errorMsg);
                 throw new RuntimeException(
-                        "AI service returned an empty response");
+                        "Failed to get prediction from AI service: " + errorMsg,
+                        lastException);
             }
 
             String disease =
@@ -106,7 +151,7 @@ public class CropImageAnalysisService {
                     new CropImageAnalysis();
 
             analysis.setUser(user);
-            analysis.setImageName(imageName);
+            analysis.setImageName(safeFileName);
             analysis.setDisease(disease);
             analysis.setConfidence(confidence);
             analysis.setRecommendation(recommendation);
@@ -120,10 +165,14 @@ public class CropImageAnalysisService {
                     "Failed to read uploaded image",
                     e);
 
+        } catch (RuntimeException e) {
+
+            throw e;
+
         } catch (Exception e) {
 
             throw new RuntimeException(
-                    "Failed to get prediction from AI service",
+                    "Failed to get prediction from AI service: " + e.getMessage(),
                     e);
         }
     }
