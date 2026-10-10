@@ -28,17 +28,19 @@ public class DataInitializer implements CommandLineRunner {
     }
 
     @Override
-    public void run(String... args) throws Exception {
-        // Seed default Admin user
-        if (!userRepository.existsByEmail("admin@agrinexus.com")) {
-            userRepository.save(new User("AgriNexus Administrator", "admin@agrinexus.com",
-                    passwordEncoder.encode("AdminPass123!"), Role.ADMIN));
-            System.out.println("✅ Seeded default admin account: admin@agrinexus.com / AdminPass123!");
-        } else {
-            User admin = userRepository.findByEmail("admin@agrinexus.com").get();
-            admin.setPassword(passwordEncoder.encode("AdminPass123!"));
-            userRepository.save(admin);
-        }
+    public void run(String... args) {
+        try {
+            // Seed default Admin user
+            if (!userRepository.existsByEmail("admin@agrinexus.com")) {
+                userRepository.save(new User("AgriNexus Administrator", "admin@agrinexus.com",
+                        passwordEncoder.encode("AdminPass123!"), Role.ADMIN));
+                System.out.println("✅ Seeded default admin account: admin@agrinexus.com / AdminPass123!");
+            } else {
+                userRepository.findByEmail("admin@agrinexus.com").ifPresent(admin -> {
+                    admin.setPassword(passwordEncoder.encode("AdminPass123!"));
+                    userRepository.save(admin);
+                });
+            }
 
         // Seed default Expert user
         if (!userRepository.existsByEmail("expert@agrinexus.com")) {
@@ -46,10 +48,12 @@ public class DataInitializer implements CommandLineRunner {
                     passwordEncoder.encode("ExpertPass123!"), Role.EXPERT));
             System.out.println("✅ Seeded default expert account: expert@agrinexus.com / ExpertPass123!");
         } else {
-            User expert = userRepository.findByEmail("expert@agrinexus.com").get();
-            expert.setPassword(passwordEncoder.encode("ExpertPass123!"));
-            userRepository.save(expert);
+            userRepository.findByEmail("expert@agrinexus.com").ifPresent(expert -> {
+                expert.setPassword(passwordEncoder.encode("ExpertPass123!"));
+                userRepository.save(expert);
+            });
         }
+
 
         // Seed default Farmer user
         if (!userRepository.existsByEmail("farmer@agrinexus.com")) {
@@ -89,6 +93,10 @@ public class DataInitializer implements CommandLineRunner {
 
             System.out.println("📚 Seeded RAG Agricultural Knowledge Base and indexed vector chunks.");
         }
+    } catch (Exception e) {
+        System.err.println("⚠️ Non-fatal warning: DataInitializer initial seeding encountered: " + e.getMessage());
     }
 }
+}
+
 

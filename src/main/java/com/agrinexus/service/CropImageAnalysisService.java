@@ -6,7 +6,10 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ByteArrayResource;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
@@ -27,13 +30,14 @@ public class CropImageAnalysisService {
 
     public CropImageAnalysisService(
             CropImageAnalysisRepository cropImageAnalysisRepository,
-            RestClient.Builder restClientBuilder) {
+            RestClient.Builder restClientBuilder,
+            @Value("${ai.service.url:https://agrinexus-ai-service.onrender.com}") String aiServiceUrl) {
 
         this.cropImageAnalysisRepository =
                 cropImageAnalysisRepository;
 
         this.restClient = restClientBuilder
-                .baseUrl("http://localhost:8000")
+                .baseUrl(aiServiceUrl)
                 .build();
     }
 
@@ -56,10 +60,21 @@ public class CropImageAnalysisService {
                         }
                     };
 
+            HttpHeaders fileHeaders = new HttpHeaders();
+            String detectedContentType = Files.probeContentType(imagePath);
+            if (detectedContentType == null || !detectedContentType.startsWith("image/")) {
+                fileHeaders.setContentType(MediaType.IMAGE_JPEG);
+            } else {
+                fileHeaders.setContentType(MediaType.parseMediaType(detectedContentType));
+            }
+
+            HttpEntity<ByteArrayResource> fileEntity =
+                    new HttpEntity<>(imageResource, fileHeaders);
+
             MultiValueMap<String, Object> body =
                     new LinkedMultiValueMap<>();
 
-            body.add("file", imageResource);
+            body.add("file", fileEntity);
 
             AiPredictionResponse prediction =
                     restClient
