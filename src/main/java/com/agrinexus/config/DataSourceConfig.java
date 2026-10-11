@@ -20,10 +20,10 @@ public class DataSourceConfig {
     @Value("${spring.datasource.url:${DB_URL:${DATABASE_URL:}}}")
     private String rawUrl;
 
-    @Value("${spring.datasource.username:${DB_USERNAME:${DB_USER:avnadmin}}}")
+    @Value("${spring.datasource.username:${DB_USERNAME:avnadmin}}")
     private String rawUsername;
 
-    @Value("${spring.datasource.password:${DB_PASSWORD:${DB_PASS:}}}")
+    @Value("${spring.datasource.password:${DB_PASSWORD:}}")
     private String rawPassword;
 
     @Value("${spring.datasource.driver-class-name:}")
@@ -39,7 +39,7 @@ public class DataSourceConfig {
         String password = rawPassword != null ? rawPassword : "";
         String driver = explicitDriver != null ? explicitDriver.trim() : "";
 
-        // Check if H2 test database
+        // Check if H2 in-memory test database
         if (url.startsWith("jdbc:h2:")) {
             log.info("Configuring H2 in-memory test database: {}", url);
             config.setJdbcUrl(url);
@@ -74,11 +74,12 @@ public class DataSourceConfig {
                         .append(port)
                         .append(path != null ? path : "");
 
-                sb.append("?sslMode=REQUIRED&allowPublicKeyRetrieval=true");
+                sb.append("?sslMode=REQUIRED&allowPublicKeyRetrieval=true&serverTimezone=UTC");
                 if (query != null && !query.isEmpty()) {
                     for (String param : query.split("&")) {
                         String lower = param.toLowerCase();
-                        if (!lower.startsWith("ssl-mode") && !lower.startsWith("sslmode") && !lower.startsWith("allowpublickeyretrieval")) {
+                        if (!lower.startsWith("ssl-mode") && !lower.startsWith("sslmode")
+                                && !lower.startsWith("allowpublickeyretrieval") && !lower.startsWith("servertimezone")) {
                             sb.append("&").append(param);
                         }
                     }
@@ -103,10 +104,19 @@ public class DataSourceConfig {
                      .replace("ssl-mode=preferred", "sslMode=PREFERRED");
         }
 
-        // If talking to a cloud host and sslMode is not explicitly in URL, add it
+        // Ensure sslMode is present for cloud MySQL
         if (!url.isEmpty() && !url.contains("sslMode=") && !url.contains("useSSL=")) {
-            String separator = url.contains("?") ? "&" : "?";
-            url = url + separator + "sslMode=REQUIRED&allowPublicKeyRetrieval=true";
+            url += (url.contains("?") ? "&" : "?") + "sslMode=REQUIRED";
+        }
+
+        // Ensure allowPublicKeyRetrieval=true for caching_sha2_password authentication
+        if (!url.isEmpty() && !url.contains("allowPublicKeyRetrieval=")) {
+            url += (url.contains("?") ? "&" : "?") + "allowPublicKeyRetrieval=true";
+        }
+
+        // Ensure serverTimezone=UTC for consistent timestamp handling
+        if (!url.isEmpty() && !url.contains("serverTimezone=")) {
+            url += (url.contains("?") ? "&" : "?") + "serverTimezone=UTC";
         }
 
         if (driver.isEmpty()) {
@@ -132,4 +142,3 @@ public class DataSourceConfig {
         return new HikariDataSource(config);
     }
 }
-
